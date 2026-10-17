@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>KungWatch stats</title>
+<style>
+  :root {
+    --bg: #0b0c0e; --card: #141519; --line: #22242a; --text: #ecebe7; --muted: #8b8d96; --faint: #5a5c64;
+    --accent: #10b981; --warn: #f59e0b; --crit: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 "Segoe UI", "Leelawadee UI", sans-serif;
+         padding: 14px 16px; user-select: none; overflow: hidden; border: 1px solid var(--line); height: 100vh; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; -webkit-app-region: drag; }
+  h1 { font-size: 15px; font-weight: 600; }
+  .close { -webkit-app-region: no-drag; background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; width: 24px; }
+  .close:hover { color: var(--text); }
+  .q { background: var(--card); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .q-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .q-name { color: var(--muted); }
+  .q-pct { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .q-tag { font-size: 11px; margin-left: 6px; font-weight: 600; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin: 6px 0 5px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+  .q-sub { color: var(--faint); font-size: 12px; }
+  .nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+  .num { background: var(--card); border-radius: 8px; padding: 8px 10px; }
+  .num b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .num span { color: var(--muted); font-size: 11px; }
+  h2 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 4px 0 6px; }
+  .chart { position: relative; height: 74px; }
+  .chart svg { display: block; width: 100%; height: 60px; }
+  .chart rect.hit { fill: transparent; cursor: default; }
+  .chart rect.col { fill: var(--accent); }
+  .chart rect.col.now { fill: #34d399; }
+  .axis { display: flex; justify-content: space-between; color: var(--faint); font-size: 10px; margin-top: 2px; }
+  .tip { position: absolute; top: -26px; background: #23252b; color: var(--text); font-size: 11px; padding: 3px 7px;
+         border-radius: 4px; white-space: nowrap; pointer-events: none; display: none; transform: translateX(-50%); }
+  ul { list-style: none; max-height: 118px; overflow-y: auto; }
+  li { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  .st { font-size: 11px; color: var(--muted); }
+  .st.working { color: var(--accent); } .st.attention { color: var(--warn); }
+  .empty { color: var(--faint); font-size: 12px; padding: 4px 0; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #f2823e; margin-right: 7px; }
+</style>
+</head>
+<body>
+<header><h1 data-t="title"></h1><button class="close" id="close" aria-label="close">×</button></header>
+
+<div class="q" id="q-five"></div>
+<div class="q" id="q-week"></div>
+
+<div class="nums">
+  <div class="num"><b id="tok-today">-</b><span data-t="tokToday"></span></div>
+  <div class="num"><b id="tok-week">-</b><span data-t="tokWeek"></span></div>
+  <div class="num"><b id="cost">-</b><span data-t="cost"></span></div>
+</div>
+
+<h2 data-t="hourly"></h2>
+<div class="chart" id="chart"><div class="tip" id="tip"></div><svg id="svg" viewBox="0 0 240 60" preserveAspectRatio="none"></svg>
+  <div class="axis" id="axis"></div></div>
+
+<h2 data-t="sessions"></h2>
+<ul id="sessions"></ul>
+
+<script>
+const L = {
+  th: { title: 'สถิติ Claude', tokToday: 'token วันนี้', tokWeek: 'token 7 วัน', cost: 'ค่าเทียบ API วันนี้',
+        hourly: 'token รายชั่วโมง · 24 ชม.ล่าสุด', sessions: 'แชท', q5: 'รอบ 5 ชม.', qw: 'รายสัปดาห์',
+        noData: 'รอข้อมูลจาก statusline (มาตอน Claude Code ตอบครั้งถัดไป)', full: 'เต็มแล้ว', near: 'ใกล้เต็ม',
+        resets: 'รีเซ็ตใน', empty: 'ยังไม่มีแชทที่รู้จัก (เริ่มนับตั้งแต่เปิดแอป)', locale: 'th-TH',
+        st: { working: 'กำลังทำ', attention: 'รออยู่', done: 'เสร็จ', idle: 'ว่าง' },
+        u: { s: ' วิ', m: ' นาที', h: ' ชม. ', hm: ' น.', d: ' วัน ', dh: ' ชม.' } },
+  en: { title: 'Claude stats', tokToday: 'tokens today', tokWeek: 'tokens 7 days', cost: 'API cost today',
+        hourly: 'tokens per hour · last 24h', sessions: 'Chats', q5: '5-hour', qw: 'Weekly',
+        noData: 'Waiting for statusline data (arrives on the next Claude Code reply)', full: 'full', near: 'nearly full',
+        resets: 'resets in', empty: 'No chats seen yet (tracking starts when the app opens)', locale: 'en-US',
+        st: { working: 'working', attention: 'waiting', done: 'done', idle: 'idle' },
+        u: { s: 's', m: ' min', h: 'h ', hm: 'm', d: 'd ', dh: 'h' } },
+};
+let T = L.en, shownLang = null;
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n);
+const dur = (s, u = T.u) => s < 60 ? s + u.s : s < 3600 ? Math.floor(s / 60) + u.m : s < 86400 ? Math.floor(s / 3600) + u.h + Math.floor(s % 3600 / 60) + u.hm : Math.floor(s / 86400) + u.d + Math.floor(s % 86400 / 3600) + u.dh;
+$('close').onclick = () => window.kw.send('panel-close');
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window.kw.send('panel-close'); });
+
+function quotaCard(el, name, q) {
+  if (!q) { el.innerHTML = `<div class="q-top"><span class="q-name">${name}</span></div><div class="q-sub">${T.noData}</div>`; return; }
+  const pct = Math.round(q.pct);
+  const [color, tag] = pct >= 100 ? ['var(--crit)', T.full] : pct >= 80 ? ['var(--warn)', T.near] : ['var(--accent)', ''];
+  const left = q.resetsAt ? Math.max(0, Math.round((q.resetsAt - Date.now()) / 1000)) : null;
+  const when = q.resetsAt ? new Date(q.resetsAt).toLocaleString(T.locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  el.innerHTML = `<div class="q-top"><span class="q-name">${name}</span>
+      <span><span class="q-pct">${pct}%</span>${tag ? `<span class="q-tag" style="color:${color}">${tag}</span>` : ''}</span></div>
+    <div class="bar"><i style="width:${Math.min(100, pct)}%;background:${color}"></i></div>
+    <div class="q-sub">${left != null ? `${T.resets} ${dur(left)} · ${when}` : ''}</div>`;
+}
+
+let hourly = [];
+function chart(data) {
+  hourly = data;
+  const max = Math.max(1, ...data.map((d) => d.tok));
+  const bw = 240 / data.length;
+  $('svg').innerHTML = data.map((d, i) => {
+    const h = d.tok ? Math.max(2, (d.tok / max) * 58) : 0;
+    return `<rect class="col${i === data.length - 1 ? ' now' : ''}" x="${i * bw + 1}" y="${60 - h}" width="${bw - 2}" height="${h}" rx="1.5"></rect>
+            <rect class="hit" data-i="${i}" x="${i * bw}" y="0" width="${bw}" height="60"></rect>`;
+  }).join('');
+  const hr = (t) => new Date(t).getHours().toString().padStart(2, '0') + ':00';
+  $('axis').innerHTML = [0, 6, 12, 18, 23].map((i) => `<span>${data[i] ? hr(data[i].t) : ''}</span>`).join('');
+}
+$('svg').addEventListener('mousemove', (e) => {
+  const i = e.target.dataset && e.target.dataset.i;
+  if (i == null) return;
+  const d = hourly[i], tip = $('tip');
+  const t = new Date(d.t);
+  tip.textContent = `${t.getHours().toString().padStart(2, '0')}:00–${(t.getHours() + 1) % 24}:00 · ${fmt(d.tok)} token`;
+  tip.style.display = 'block';
+  const w = $('chart').clientWidth;
+  tip.style.left = Math.min(Math.max((Number(i) + 0.5) / hourly.length * w, 70), w - 70) + 'px';
+});
+$('svg').addEventListener('mouseleave', () => { $('tip').style.display = 'none'; });
+
+window.kw.onStats((s) => {
+  if (s.lang !== shownLang) {
+    shownLang = s.lang;
+    T = L[s.lang] || L.en;
+    document.documentElement.lang = s.lang;
+    document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = T[el.dataset.t]; });
+  }
+  quotaCard($('q-five'), T.q5, s.quota.five);
+  quotaCard($('q-week'), T.qw, s.quota.week);
+  $('tok-today').textContent = fmt(s.today);
+  $('tok-week').textContent = fmt(s.week);
+  $('cost').textContent = '$' + s.cost.toFixed(2);
+  chart(s.hourly);
+  $('sessions').innerHTML = s.sessions.length
+    ? s.sessions.map((x) => `<li><span>${x.hue != null ? `<i class="dot" style="filter:hue-rotate(${x.hue}deg)"></i>` : ''}${x.proj.replace(/</g, '&lt;')}</span><span class="st ${x.base}">${T.st[x.base] || x.base} · ${dur(x.secs)}</span></li>`).join('')
+    : `<li class="empty">${T.empty}</li>`;
+});
+</script>
+</body>
+</html>
