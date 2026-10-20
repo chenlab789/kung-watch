@@ -1,10 +1,10 @@
 // KungWatch — desktop pet ที่ขยับตามงานของ Claude Code (แชทละตัว แยกสี)
 // อาร์ตตัวละคร: tokibean (MIT, github.com/ZGhey/tokibean) อยู่ใน vendor/
 // hook.js + statusline-bridge.js POST มาที่ :7788/event → state แยกตาม session → ส่งให้ตัวของ session นั้นทุก 100ms
-const { app, BrowserWindow, ipcMain, screen, Menu, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Menu, Notification, globalShortcut, dialog } = require('electron');
 const http = require('http'), fs = require('fs'), path = require('path');
 const { Worker } = require('worker_threads');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const STRINGS = require('./i18n');
 
 const PORT = 7788;
@@ -17,6 +17,7 @@ const HUES = [0, 200, 110, 280, 330, 50, 165, 240, 80, 305, 260, 345];
 const WARN_PCT = 80;
 const IDLE_KEY = '_idle';                        // ตัวที่ยืนรอตอนไม่มีแชทเลย
 const LOGIN = { path: process.execPath, args: [path.resolve(__dirname)], name: 'KungWatch' };
+const HOTKEY = 'Control+Alt+K', HOTKEY_LABEL = 'Ctrl+Alt+K';   // ซ่อน/เรียกตัวละครกลับ
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 app.setAppUserModelId('KungWatch');
@@ -24,7 +25,9 @@ app.setAppUserModelId('KungWatch');
 // ---------- config ----------
 const CFG_FILE = path.join(app.getPath('userData'), 'config.json');
 // colors: ชื่อโปรเจกต์ → hue ที่เลือกเอง · lang: null = ตามภาษาเครื่อง · rude: ข้อความจิ้มแบบหยาบ
-const cfg = { skin: 'classic', scale: 1, notify: true, sound: true, rude: false, lang: null, x: null, colors: {} };
+// dndUntil: ห้ามรบกวนถึงเวลานี้ (ms) · dndNightly: ห้ามรบกวนทุกคืน 22:00–08:00
+const cfg = { skin: 'classic', scale: 1, notify: true, sound: true, rude: false, lang: null, x: null, colors: {},
+  dndUntil: 0, dndNightly: false };
 try { Object.assign(cfg, JSON.parse(fs.readFileSync(CFG_FILE, 'utf8'))); } catch {}
 const saveCfg = () => { try { fs.writeFileSync(CFG_FILE, JSON.stringify(cfg)); } catch {} };
 let T = STRINGS.en;                              // ตั้งจริงตอน app ready (ต้องรู้ locale ก่อน)
@@ -65,14 +68,49 @@ function friendlyTool(tool, input) {
   return known || snippet(tool.split('__').pop(), 12);
 }
 
+// ---------- ห้ามรบกวน / ซ่อน ----------
+// ห้ามรบกวน = ไม่มี toast ไม่มีเสียง (ฟองข้อความยังขึ้น) · ซ่อน = กดปุ่มลัดเอง หรือมีแอปเต็มจออยู่ข้างหน้า
+let hidden = false, fullscreen = false;
+const shown = () => !hidden && !fullscreen;
+const nightHour = (d) => d.getHours() >= 22 || d.getHours() < 8;
+function next8am() { const d = new Date(); if (d.getHours() >= 8) d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return d.getTime(); }
+// ห้ามรบกวนถึงเมื่อไหร่ (ms) หรือ 0 = ไม่ได้ห้าม
+function dndEnd() {
+  const now = Date.now(), end = cfg.dndUntil > now ? cfg.dndUntil : 0;
+  return cfg.dndNightly && nightHour(new Date()) ? Math.max(end, next8am()) : end;
+}
+function setDnd(until, nightly) {
+  cfg.dndUntil = until; cfg.dndNightly = nightly; saveCfg();
+  sayAll(dndEnd() ? T.dndBubble : T.dndOffBubble, 3);
+}
+
+function applyVisibility() {
+  for (const p of pets.values()) if (!p.win.isDestroyed()) { if (shown()) p.win.showInactive(); else p.win.hide(); }
+  if (!shown() && panel && !panel.isDestroyed()) panel.close();
+}
+const setHidden = (on) => { hidden = on; applyVisibility(); };
+
+// แอปเต็มจอ (หนัง/เกม/พรีเซนต์) → ซ่อนตัวละครและงดเสียง; fullscreen.ps1 พิมพ์ 1/0 ทุกครั้งที่สถานะเปลี่ยน
+let fsWatcher = null, quitting = false;
+function watchFullscreen() {
+  if (process.platform !== 'win32') return;
+  fsWatcher = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'fullscreen.ps1'), String(process.pid)],
+    { windowsHide: true });
+  fsWatcher.stdout.on('data', (b) => {
+    const on = String(b).trim().split(/\s+/).pop() === '1';
+    if (on !== fullscreen) { fullscreen = on; applyVisibility(); }
+  });
+  fsWatcher.on('exit', () => { if (!quitting) setTimeout(watchFullscreen, 10e3); });   // ตายเองก็เปิดใหม่
+}
+
 function notify(title, body) {
-  if (!cfg.notify || !Notification.isSupported()) return;
+  if (!cfg.notify || dndEnd() || !Notification.isSupported()) return;
   new Notification({ title, body, silent: cfg.sound }).show();   // มีเสียงของเราเองแล้ว ไม่ต้องติ๊งของ Windows ซ้อน
 }
 
 // เสียงเล่นในหน้าต่างตัวละครของแชทนั้น (WebAudio) — kind: done | attention | warn
 function sound(sid, kind) {
-  if (!cfg.sound) return;
+  if (!cfg.sound || dndEnd() || fullscreen) return;
   const pet = pets.get(sid) || pets.values().next().value;
   if (pet && !pet.win.isDestroyed()) pet.win.webContents.send('sound', kind);
 }
@@ -204,6 +242,14 @@ function expire(now) {
   if (idleBubble.text && now > idleBubble.until) idleBubble.text = null;
 }
 
+// ปิดหน้าต่างเทอร์มินัลทิ้ง (ไม่ได้ /exit) = ไม่มี SessionEnd → ดูว่า claude.exe ของแชทยังอยู่ไหม ตายแล้วลบตัวทันที
+function reapDead() {
+  for (const [id, s] of sessions) {
+    if (!s.pid) continue;
+    try { process.kill(s.pid, 0); } catch (e) { if (e.code === 'ESRCH') sessions.delete(id); }
+  }
+}
+
 function frameFor(pet, now) {
   const s = sessions.get(pet.key);
   const spent = [quota.five, quota.week].find(q => q && q.pct >= 100 && (!q.resetsAt || q.resetsAt > now));
@@ -294,7 +340,7 @@ function createWindow(pet, x) {
   pet.win.setAlwaysOnTop(true, 'screen-saver');
   pet.win.setIgnoreMouseEvents(true, { forward: true });   // เรียกครั้งเดียวตอนสร้าง (เรียกซ้ำแล้ว forward พัง)
   loadPet(pet);
-  pet.win.once('ready-to-show', () => pet.win.showInactive());
+  pet.win.once('ready-to-show', () => { if (shown()) pet.win.showInactive(); });
 }
 const loadPet = (pet) => pet.win.loadFile(path.join(__dirname, 'index.html'), { query: { skin: cfg.skin, scale: String(cfg.scale) } });
 
@@ -418,10 +464,20 @@ ipcMain.on('menu', (e) => {
   const pet = petOf(e.sender);
   if (!pet) return;
   const M = T.menu, pokes = cfg.rude ? T.rudePokes : T.pokes;
+  const end = dndEnd(), hhmm = (ms) => new Date(ms).toTimeString().slice(0, 5);
   const m = Menu.buildFromTemplate([
     { label: M.panel, click: () => togglePanel(pet) },
     { label: M.recent, click: () => sayPet(pet, log.length ? log.slice(0, 3).join('  /  ') : T.nothingYet, 8) },
     { label: M.poke, click: () => sayPet(pet, pokes[Math.floor(Math.random() * pokes.length)], 3) },
+    { type: 'separator' },
+    { label: M.hide(HOTKEY_LABEL), click: () => setHidden(true) },
+    { label: end ? M.dndActive(hhmm(end)) : M.dnd, submenu: [
+      { label: M.dndOff, enabled: cfg.dndUntil > Date.now(), click: () => setDnd(0, cfg.dndNightly) },
+      { label: M.dnd1h, click: () => setDnd(Date.now() + 3600e3, cfg.dndNightly) },
+      { label: M.dndMorning, click: () => setDnd(next8am(), cfg.dndNightly) },
+      { type: 'separator' },
+      { label: M.dndNightly, type: 'checkbox', checked: cfg.dndNightly, click: (i) => setDnd(cfg.dndUntil, i.checked) },
+    ] },
     { type: 'separator' },
     { label: M.color, submenu: HUES.map((h, i) => ({
       label: usedHues(pet).has(h) ? `${T.colors[i]} (${M.colorUsed})` : T.colors[i], type: 'radio', checked: pet.hue === h,
@@ -461,15 +517,24 @@ const server = http.createServer((req, res) => {
     res.end(s && !s.pid && !s.pidAsked ? (s.pidAsked = true, 'need-pid') : 'ok');
   });
 });
-server.on('error', () => app.quit());   // พอร์ตชน = มีตัวอื่นรันอยู่
+// พอร์ตชน = โปรแกรมอื่นจองไว้ (KungWatch ตัวที่สองโดน single-instance lock กันไปแล้ว) → บอกให้รู้ ไม่ปิดเงียบ
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') dialog.showErrorBox(T.portTitle, T.portBody(PORT));
+  app.quit();
+});
 
-app.on('second-instance', () => sayAll(T.here, 3));   // กด shortcut ซ้ำตอนเปิดอยู่แล้ว
+// กด shortcut ซ้ำตอนเปิดอยู่แล้ว = เรียกตัวที่ซ่อนอยู่กลับมาด้วย
+app.on('second-instance', () => { if (hidden) setHidden(false); sayAll(T.here, 3); });
+app.on('will-quit', () => { quitting = true; globalShortcut.unregisterAll(); if (fsWatcher) fsWatcher.kill(); });
 
 app.whenReady().then(() => {
   T = STRINGS[cfg.lang || (app.getLocale().startsWith('th') ? 'th' : 'en')] || STRINGS.en;
   server.listen(PORT, '127.0.0.1');
   syncPets();
   scanUsage();
+  globalShortcut.register(HOTKEY, () => setHidden(!hidden));
+  watchFullscreen();
+  setInterval(reapDead, 10e3);
   setInterval(scanUsage, 60e3);
   setInterval(() => { for (const p of pets.values()) physics(p); }, 16);
   setInterval(() => {
@@ -479,6 +544,6 @@ app.whenReady().then(() => {
     for (const p of pets.values()) if (!p.win.isDestroyed()) p.win.webContents.send('state', frameFor(p, now));
   }, 100);
   setInterval(pushStats, 1000);
-  setInterval(() => { for (const p of pets.values()) if (!p.win.isDestroyed()) p.win.setAlwaysOnTop(true, 'screen-saver'); }, 5000);
+  setInterval(() => { if (shown()) for (const p of pets.values()) if (!p.win.isDestroyed()) p.win.setAlwaysOnTop(true, 'screen-saver'); }, 5000);
 });
 app.on('window-all-closed', () => { if (!pets.size) app.quit(); });

@@ -22,6 +22,7 @@
 - **Real quota numbers without logging in.** Reads the `rate_limits` Claude Code already hands to your status line, so no OAuth
 - **Stats panel.** 5-hour and weekly quota with reset times, tokens today and over 7 days, API-equivalent cost, an hourly chart and the list of chats
 - **Plays with you.** Drag it, throw it, it bounces off the floor and walks across monitors. Its eyes follow the cursor; it likes head pats and giggles when tickled
+- **Stays out of the way.** Pets hide (and go silent) while a full-screen video, game or presentation is in front. `Ctrl+Alt+K` hides or shows every pet. **Do not disturb** mutes notifications and sounds for an hour, until 8 AM, or every night from 22:00 to 08:00. A chat whose terminal window was closed loses its pet within 10 seconds
 - **Remembers your picks.** Pick a color per project folder and it sticks. Choose from 6 characters and 4 sizes, with Thai or English UI
 
 ![skins](docs/skins.png) ![panel](docs/panel.png)
@@ -61,11 +62,12 @@ Claude Code ──hooks──▶ hook.js ──┐
 
 - Everything stays on your machine: no network calls, no accounts, no telemetry
 - If the app isn't running, the hooks exit silently and don't slow Claude Code down
+- KungWatch listens on port 7788. If another program already uses it, KungWatch tells you and exits
 - Token counts come from Claude Code's local logs (`~/.claude/projects/**/*.jsonl`)
 
 ## Right-click menu
 
-Stats panel · Recent activity · Poke · Color · Character · Size · Notifications · Sound · Cheeky lines · Start at login · Quit
+Stats panel · Recent activity · Poke · Hide all · Do not disturb · Color · Character · Size · Notifications · Sound · Cheeky lines · Start at login · Quit
 
 ## Credits
 

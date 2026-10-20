@@ -24,10 +24,16 @@ module.exports = {
     waiting: (proj) => `${proj} รออยู่`, waitingBody: 'Claude รอให้ตอบ',
     sessionStart: (proj) => `ลุย! ${proj}`,
     ouch: 'โอ๊ยยย', here: 'อยู่นี่ไง', nothingYet: 'ยังไม่ได้ทำอะไรเลย',
+    dndBubble: 'เงียบแล้ว ไม่กวน', dndOffBubble: 'กลับมาเตือนแล้ว',
+    portTitle: 'KungWatch เปิดไม่ได้',
+    portBody: (port) => `พอร์ต ${port} มีโปรแกรมอื่นใช้อยู่ ปิดโปรแกรมนั้นก่อนแล้วเปิด KungWatch ใหม่`,
     menu: {
       panel: 'แผงสถิติ', recent: 'ดูที่ทำล่าสุด', poke: 'จิ้ม', color: 'สีตัวนี้', colorUsed: 'ตัวอื่นใช้อยู่',
       skin: 'ตัวละคร', size: 'ขนาด', notify: 'แจ้งเตือน (เสร็จงาน/ขออนุญาต/โควตา/ค้าง)', sound: 'เสียง',
       rude: 'ข้อความกวนๆ (หยาบ)', login: 'เปิดเองตอนเปิดเครื่อง', quit: 'ปิด',
+      hide: (key) => `ซ่อนทุกตัว (${key} เรียกกลับ)`,
+      dnd: 'ห้ามรบกวน', dndOff: 'ปิด', dnd1h: '1 ชั่วโมง', dndMorning: 'จนถึง 8 โมงเช้า',
+      dndNightly: 'ทุกคืน 22:00–08:00', dndActive: (t) => `ห้ามรบกวน (ถึง ${t})`,
     },
   },
   en: {
@@ -53,10 +59,16 @@ module.exports = {
     waiting: (proj) => `${proj} needs you`, waitingBody: 'Claude is waiting for you',
     sessionStart: (proj) => `Let's go! ${proj}`,
     ouch: 'Ouch!', here: "I'm here", nothingYet: 'Nothing yet',
+    dndBubble: "Shh — I'll keep quiet", dndOffBubble: 'Alerts back on',
+    portTitle: "KungWatch can't start",
+    portBody: (port) => `Port ${port} is already used by another program. Close it, then start KungWatch again.`,
     menu: {
       panel: 'Stats panel', recent: 'Recent activity', poke: 'Poke', color: 'Color', colorUsed: 'in use',
       skin: 'Character', size: 'Size', notify: 'Notifications (done/permission/quota/stuck)', sound: 'Sound',
       rude: 'Cheeky lines', login: 'Start at login', quit: 'Quit',
+      hide: (key) => `Hide all (${key} to bring back)`,
+      dnd: 'Do not disturb', dndOff: 'Off', dnd1h: '1 hour', dndMorning: 'Until 8 AM',
+      dndNightly: 'Every night 22:00–08:00', dndActive: (t) => `Do not disturb (until ${t})`,
     },
   },
 };
