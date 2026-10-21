@@ -425,8 +425,11 @@ ipcMain.on('drag-end', (e) => { const pet = petOf(e.sender); if (pet) endDrag(pe
 function focusChat(pet) {
   const s = sessions.get(pet.key);
   if (!s || !s.pid) { togglePanel(pet); return; }
+  if (pet.focusing) return;   // ดับเบิลคลิก = สคริปต์สองตัวแย่งเปลี่ยนชื่อแท็บกัน → รอตัวแรกจบก่อน
+  pet.focusing = true;
   execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'focus.ps1'), String(s.pid)],
     { timeout: 5000, windowsHide: true }, (err, out) => {
+      pet.focusing = false;
       if (err || !String(out).startsWith('focused')) { s.pid = null; s.pidAsked = false; togglePanel(pet); }   // claude.exe ตายแล้ว → ขอ pid ใหม่รอบหน้า
     });
 }

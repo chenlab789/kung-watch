@@ -27,10 +27,13 @@ if (-not $procs.ContainsKey($ClaudePid)) { "notfound"; exit 1 }
 $p = $ClaudePid; $hwnd = [IntPtr]::Zero; $owner = ''
 for ($i = 0; $i -lt 12 -and $procs.ContainsKey($p); $i++) {
   $h = (Get-Process -Id $p -ErrorAction SilentlyContinue).MainWindowHandle
+  if ($procs[$p].Name -eq 'explorer.exe') { break }   # เปิดจาก .bat → แม่คือ explorer ไม่ใช่หน้าต่างแชท
   if ($h -and $h -ne [IntPtr]::Zero) { $hwnd = $h; $owner = $procs[$p].Name; break }
   $p = [int]$procs[$p].ParentProcessId
 }
-if ($hwnd -eq [IntPtr]::Zero) { "notfound"; exit 1 }
+# ไม่เจอหน้าต่างแม่ แต่ Windows Terminal เปิดอยู่ = WT รับคอนโซลมาโฮสต์แทน (default terminal) → ไปหาแท็บแทน
+if ($hwnd -eq [IntPtr]::Zero -and (Get-Process WindowsTerminal -ErrorAction SilentlyContinue)) { $owner = 'WindowsTerminal.exe' }
+if ($hwnd -eq [IntPtr]::Zero -and $owner -ne 'WindowsTerminal.exe') { "notfound"; exit 1 }
 
 # 2) Windows Terminal → หาแท็บของแชทนี้
 $tabInfo = ''
@@ -66,6 +69,7 @@ if ($owner -eq 'WindowsTerminal.exe') {
   }
 }
 
+if ($hwnd -eq [IntPtr]::Zero) { "notfound"; exit 1 }
 if ($DryRun) { "found $owner $tabInfo"; exit 0 }
 if ([KWFocus]::IsIconic($hwnd)) { [KWFocus]::ShowWindow($hwnd, 9) | Out-Null }   # SW_RESTORE
 # กด Alt หลอกหนึ่งที — Windows ยอมให้ SetForegroundWindow ทำงานจากโปรเซสเบื้องหลัง
