@@ -85,7 +85,12 @@ function setDnd(until, nightly) {
 }
 
 function applyVisibility() {
-  for (const p of pets.values()) if (!p.win.isDestroyed()) { if (shown()) p.win.showInactive(); else p.win.hide(); }
+  // hide()→show() บน Windows ทำ forward ของ setIgnoreMouseEvents พัง (เมาส์ทะลุถาวร ลากไม่ได้) → ตอนโชว์สร้างหน้าต่างใหม่แทน
+  for (const p of pets.values()) {
+    if (p.win.isDestroyed()) continue;
+    if (!shown()) { p.win.hide(); continue; }
+    const old = p.win; createWindow(p, old.getPosition()[0]); old.destroy();
+  }
   if (!shown() && panel && !panel.isDestroyed()) panel.close();
 }
 const setHidden = (on) => { hidden = on; applyVisibility(); };
