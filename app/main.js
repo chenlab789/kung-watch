@@ -308,7 +308,9 @@ function spawnX() {
   const wa = screen.getPrimaryDisplay().workArea;
   if (!pets.size) return cfg.x != null ? cfg.x : wa.x + wa.width - w - 60;
   // ต่อแถวไปทางซ้ายของตัวที่อยู่ซ้ายสุด ล้นจอก็วนกลับไปขวา
-  const left = Math.min(...[...pets.values()].map(p => p.win.getPosition()[0]));
+  const alive = [...pets.values()].filter(p => !p.win.isDestroyed());
+  if (!alive.length) return wa.x + wa.width - w - 60;
+  const left = Math.min(...alive.map(p => p.win.getPosition()[0]));
   const x = left - Math.round(w * 0.55);
   return x < wa.x ? wa.x + wa.width - w - 60 : x;
 }
@@ -342,6 +344,8 @@ function createWindow(pet, x) {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false,
                       autoplayPolicy: 'no-user-gesture-required' },   // ให้ WebAudio เล่นเสียงแจ้งเตือนได้โดยไม่ต้องคลิกก่อน
   });
+  // หน้าต่างโดนปิดจากที่อื่น (renderer crash ฯลฯ) → เอาออกจาก map ไม่งั้นตัวอื่นไปเรียกหน้าต่างที่ตายแล้ว
+  pet.win.on('closed', () => { if (pets.get(pet.key) === pet) pets.delete(pet.key); });
   pet.win.setAlwaysOnTop(true, 'screen-saver');
   pet.win.setIgnoreMouseEvents(true, { forward: true });   // เรียกครั้งเดียวตอนสร้าง (เรียกซ้ำแล้ว forward พัง)
   loadPet(pet);
