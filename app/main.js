@@ -27,7 +27,7 @@ const CFG_FILE = path.join(app.getPath('userData'), 'config.json');
 // colors: ชื่อโปรเจกต์ → hue ที่เลือกเอง · lang: null = ตามภาษาเครื่อง · rude: ข้อความจิ้มแบบหยาบ
 // dndUntil: ห้ามรบกวนถึงเวลานี้ (ms) · dndNightly: ห้ามรบกวนทุกคืน 22:00–08:00
 const cfg = { skin: 'classic', scale: 1, notify: true, sound: true, rude: false, lang: null, x: null, colors: {},
-  dndUntil: 0, dndNightly: false };
+  dndUntil: 0, dndNightly: false, hideFullscreen: false };   // hideFullscreen: ซ่อนตัวตอนมีแอปเต็มจอ (ปิด = อยู่บนสุดตลอด)
 try { Object.assign(cfg, JSON.parse(fs.readFileSync(CFG_FILE, 'utf8'))); } catch {}
 const saveCfg = () => { try { fs.writeFileSync(CFG_FILE, JSON.stringify(cfg)); } catch {} };
 let T = STRINGS.en;                              // ตั้งจริงตอน app ready (ต้องรู้ locale ก่อน)
@@ -71,7 +71,7 @@ function friendlyTool(tool, input) {
 // ---------- ห้ามรบกวน / ซ่อน ----------
 // ห้ามรบกวน = ไม่มี toast ไม่มีเสียง (ฟองข้อความยังขึ้น) · ซ่อน = กดปุ่มลัดเอง หรือมีแอปเต็มจออยู่ข้างหน้า
 let hidden = false, fullscreen = false;
-const shown = () => !hidden && !fullscreen;
+const shown = () => !hidden && !(fullscreen && cfg.hideFullscreen);
 const nightHour = (d) => d.getHours() >= 22 || d.getHours() < 8;
 function next8am() { const d = new Date(); if (d.getHours() >= 8) d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); return d.getTime(); }
 // ห้ามรบกวนถึงเมื่อไหร่ (ms) หรือ 0 = ไม่ได้ห้าม
@@ -103,7 +103,7 @@ function watchFullscreen() {
     { windowsHide: true });
   fsWatcher.stdout.on('data', (b) => {
     const on = String(b).trim().split(/\s+/).pop() === '1';
-    if (on !== fullscreen) { fullscreen = on; applyVisibility(); }
+    if (on !== fullscreen) { fullscreen = on; if (cfg.hideFullscreen) applyVisibility(); }
   });
   fsWatcher.on('exit', () => { if (!quitting) setTimeout(watchFullscreen, 10e3); });   // ตายเองก็เปิดใหม่
 }
@@ -338,14 +338,15 @@ function createPet(key) {
 
 function createWindow(pet, x) {
   const { w, h } = size();
-  pet.win = new BrowserWindow({
+  const win = pet.win = new BrowserWindow({
     width: w, height: h, x, y: floorY(x), transparent: true, frame: false, resizable: false,
     alwaysOnTop: true, skipTaskbar: true, hasShadow: false, focusable: false, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false,
                       autoplayPolicy: 'no-user-gesture-required' },   // ให้ WebAudio เล่นเสียงแจ้งเตือนได้โดยไม่ต้องคลิกก่อน
   });
   // หน้าต่างโดนปิดจากที่อื่น (renderer crash ฯลฯ) → เอาออกจาก map ไม่งั้นตัวอื่นไปเรียกหน้าต่างที่ตายแล้ว
-  pet.win.on('closed', () => { if (pets.get(pet.key) === pet) pets.delete(pet.key); });
+  // เทียบ win ด้วย: ตอนสร้างหน้าต่างใหม่แทนของเก่า (applyVisibility) old.destroy() จะยิง closed ด้วย — ถ้าไม่เทียบ ตัวจะหลุดจาก map แล้ว syncPets สร้างซ้ำ หน้าต่างเก่าค้างซ้อนกัน
+  win.on('closed', () => { if (pet.win === win && pets.get(pet.key) === pet) pets.delete(pet.key); });
   pet.win.setAlwaysOnTop(true, 'screen-saver');
   pet.win.setIgnoreMouseEvents(true, { forward: true });   // เรียกครั้งเดียวตอนสร้าง (เรียกซ้ำแล้ว forward พัง)
   loadPet(pet);
@@ -509,6 +510,7 @@ ipcMain.on('menu', (e) => {
     { label: M.notify, type: 'checkbox', checked: cfg.notify, click: (i) => { cfg.notify = i.checked; saveCfg(); } },
     { label: M.sound, type: 'checkbox', checked: cfg.sound, click: (i) => { cfg.sound = i.checked; saveCfg(); if (i.checked) sound(pet.key, 'done'); } },
     { label: M.rude, type: 'checkbox', checked: cfg.rude, click: (i) => { cfg.rude = i.checked; saveCfg(); } },
+    { label: M.hideFs, type: 'checkbox', checked: cfg.hideFullscreen, click: (i) => { cfg.hideFullscreen = i.checked; saveCfg(); applyVisibility(); } },
     { label: M.login, type: 'checkbox', checked: atLogin(), click: (i) => setLogin(i.checked) },
     { type: 'separator' },
     { label: M.quit, click: () => app.quit() },
@@ -547,6 +549,11 @@ app.whenReady().then(() => {
   globalShortcut.register(HOTKEY, () => setHidden(!hidden));
   watchFullscreen();
   setInterval(reapDead, 10e3);
+  // เกม/แอปเต็มจอแย่งชั้นบนสุดไปได้ → ดันตัวกลับขึ้นบนทุก 2 วิ
+  setInterval(() => {
+    if (!shown()) return;
+    for (const p of pets.values()) if (!p.win.isDestroyed() && p.win.isVisible()) { p.win.setAlwaysOnTop(true, 'screen-saver'); p.win.moveTop(); }
+  }, 2e3);
   setInterval(scanUsage, 60e3);
   setInterval(() => { for (const p of pets.values()) physics(p); }, 16);
   setInterval(() => {

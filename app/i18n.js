@@ -30,7 +30,7 @@ module.exports = {
     menu: {
       panel: 'แผงสถิติ', recent: 'ดูที่ทำล่าสุด', poke: 'จิ้ม', color: 'สีตัวนี้', colorUsed: 'ตัวอื่นใช้อยู่',
       skin: 'ตัวละคร', size: 'ขนาด', notify: 'แจ้งเตือน (เสร็จงาน/ขออนุญาต/โควตา/ค้าง)', sound: 'เสียง',
-      rude: 'ข้อความกวนๆ (หยาบ)', login: 'เปิดเองตอนเปิดเครื่อง', quit: 'ปิด',
+      rude: 'ข้อความกวนๆ (หยาบ)', hideFs: 'ซ่อนตัวตอนเต็มจอ', login: 'เปิดเองตอนเปิดเครื่อง', quit: 'ปิด',
       hide: (key) => `ซ่อนทุกตัว (${key} เรียกกลับ)`,
       dnd: 'ห้ามรบกวน', dndOff: 'ปิด', dnd1h: '1 ชั่วโมง', dndMorning: 'จนถึง 8 โมงเช้า',
       dndNightly: 'ทุกคืน 22:00–08:00', dndActive: (t) => `ห้ามรบกวน (ถึง ${t})`,
@@ -65,7 +65,7 @@ module.exports = {
     menu: {
       panel: 'Stats panel', recent: 'Recent activity', poke: 'Poke', color: 'Color', colorUsed: 'in use',
       skin: 'Character', size: 'Size', notify: 'Notifications (done/permission/quota/stuck)', sound: 'Sound',
-      rude: 'Cheeky lines', login: 'Start at login', quit: 'Quit',
+      rude: 'Cheeky lines', hideFs: 'Hide when full-screen', login: 'Start at login', quit: 'Quit',
       hide: (key) => `Hide all (${key} to bring back)`,
       dnd: 'Do not disturb', dndOff: 'Off', dnd1h: '1 hour', dndMorning: 'Until 8 AM',
       dndNightly: 'Every night 22:00–08:00', dndActive: (t) => `Do not disturb (until ${t})`,
